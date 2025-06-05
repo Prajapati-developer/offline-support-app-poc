@@ -13,22 +13,23 @@ const DexieDemo = () => {
   const [storageUsed, setStorageUsed] = useState(0);
   const [apiItems, setApiItems] = useState([]);
   const webcamRef = useRef(null);
-console.log("apiItems",apiItems)
+  console.log("apiItems", apiItems);
   const loadAttachments = async () => {
-    
     const all = await db.attachments.orderBy("timestamp").reverse().toArray();
-    const allApiData = await db.postApiData.orderBy("timestamp").reverse().toArray();
-    
+    const allApiData = await db.postApiData
+      .orderBy("timestamp")
+      .reverse()
+      .toArray();
+
     const totalBytes = all.reduce((sum, att) => {
       return sum + Math.ceil((att.data.length * 3) / 4);
     }, 0);
     const apiDataBytes = allApiData.reduce((sum, item) => {
-      
       return sum + new TextEncoder().encode(JSON.stringify(item.data)).length;
     }, 0);
     setApiItems(allApiData[0].data);
     setAttachments(all);
-    setStorageUsed(totalBytes+apiDataBytes);
+    setStorageUsed(totalBytes + apiDataBytes);
   };
 
   const formatBytes = (bytes) => {
@@ -45,25 +46,28 @@ console.log("apiItems",apiItems)
   };
   const fetchAndSaveApiData = async () => {
     try {
-      const response = await fetch("https://jsonplaceholder.typicode.com/posts");
+      const response = await fetch(
+        "https://jsonplaceholder.typicode.com/posts"
+      );
       const post = await response.json();
-      const existing = await db.postApiData.where("name").equals("Posts").first();
+      const existing = await db.postApiData
+        .where("name")
+        .equals("Posts")
+        .first();
 
       if (existing) {
-
         await db.postApiData.update(existing.id, {
           data: post,
           timestamp: Date.now(),
         });
       } else {
-        
         await db.postApiData.add({
           name: `Posts`,
           data: post,
           timestamp: Date.now(),
         });
       }
-    // }
+      // }
       // await db.postApiData.add({
       //   name: `Posts`,
       //   data,
@@ -78,7 +82,6 @@ console.log("apiItems",apiItems)
   useEffect(() => {
     loadAttachments();
   }, []);
-
 
   const handleFileUpload = async (e) => {
     const file = e.target.files[0];
@@ -157,7 +160,14 @@ console.log("apiItems",apiItems)
         </div>
       )}
 
-      <div style={{ margin: 10, display: "flex", flexWrap: "wrap" ,alignItems:"center"}}>
+      <div
+        style={{
+          margin: 10,
+          display: "flex",
+          flexWrap: "wrap",
+          alignItems: "center",
+        }}
+      >
         {attachments.map((att) => (
           <div key={att.id} style={{ margin: 10 }}>
             {att.type.startsWith("image") ? (
@@ -171,23 +181,26 @@ console.log("apiItems",apiItems)
                 {att.name}
               </a>
             )}
-             <button onClick={() => deleteAttachment(att.id)}> Delete</button>
+            <button onClick={() => deleteAttachment(att.id)}> Delete</button>
           </div>
         ))}
       </div>
-     { apiItems && apiItems.length>0 && <><h3>API Data</h3><>
-        {apiItems.map((item) => (
-          <p key={item.id} style={{ marginBottom: 10 ,display:"flex"}}>
-            <strong>{item.title}</strong>
+      {apiItems && apiItems.length > 0 && (
+        <>
+          <h3>API Data</h3>
+          <>
+            {apiItems.map((item) => (
+              <p key={item.id} style={{ marginBottom: 10, display: "flex" }}>
+                <strong>{item.title}</strong>
 
-            {/* <div>{item.body}</div> */}
+                {/* <div>{item.body}</div> */}
 
-            <button onClick={() => deleteApiItem(item.id)}>Delete</button>
-          </p>
-        ))}
-      </></>
-      }
-      
+                <button onClick={() => deleteApiItem(item.id)}>Delete</button>
+              </p>
+            ))}
+          </>
+        </>
+      )}
     </div>
   );
 };
