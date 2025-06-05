@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import Dexie from "dexie";
 import Webcam from "react-webcam";
+// import { compressSync, decompressSync, strToU8, strFromU8 } from "fflate";
 const db = new Dexie("react-dexie-demo");
 db.version(1).stores({
   images: "++id, name, type, data, timestamp",
@@ -8,7 +9,15 @@ db.version(1).stores({
   attachments: "++id, type, name, data, timestamp",
   postApiData: "++id, name, data, timestamp",
 });
-
+// const compressData = (string) => {
+//   const uint8 = strToU8(string);              
+//   const compressed = compressSync(uint8);     
+//   return compressed;                          
+// };
+// const decompressData = (compressedUint8) => {
+//   const decompressed = decompressSync(compressedUint8); 
+//   return strFromU8(decompressed);                     
+// };
 const DexieDemo = () => {
   const [attachments, setAttachments] = useState([]);
   const [cameraOn, setCameraOn] = useState(false);
