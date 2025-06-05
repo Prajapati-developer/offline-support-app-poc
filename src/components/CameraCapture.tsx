@@ -1,5 +1,5 @@
 // CameraCapture.js
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { db } from '../utils/db';
 
 const CameraCapture = () => {
@@ -38,6 +38,7 @@ const CameraCapture = () => {
             // Display preview
             setImageUrl(URL.createObjectURL(blob));
         }, 'image/jpeg');
+        viewAllDocs();
     };
 
     const viewAllDocs = async () => {
@@ -99,9 +100,12 @@ const CameraCapture = () => {
         }
      
       }
+      useEffect(()=>{
+        viewAllDocs()
+      },[])
     return (
         <div>
-            Storage used: <strong>{formatBytes(total)}</strong>
+          {}  Storage used: <strong>{total && formatBytes(total)}</strong>
             <video ref={videoRef} autoPlay style={{ width: '100%' }} />
             <canvas ref={canvasRef} style={{ display: 'none' }} />
             <button onClick={startCamera}>Start Camera</button>
