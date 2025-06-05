@@ -4,6 +4,7 @@ import './index.css'
 import App from './App.tsx'
 import DownloadManager from './components/DownloadManager.tsx'
 import StatusCheck from './components/StatusCheck.tsx'
+import CameraCapture from './components/CameraCapture.tsx'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
@@ -12,7 +13,8 @@ createRoot(document.getElementById('root')!).render(
     <h1>Hello</h1>
     {/* <DownloadManager />
      */}
-    < StatusCheck />
+      {/* < StatusCheck /> */}
+      <CameraCapture />
     </>
   </StrictMode>,
 )
