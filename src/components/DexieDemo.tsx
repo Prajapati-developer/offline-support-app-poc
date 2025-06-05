@@ -3,6 +3,8 @@ import Dexie from "dexie";
 import Webcam from "react-webcam";
 const db = new Dexie("react-dexie-demo");
 db.version(1).stores({
+  images: "++id, name, type, data, timestamp",
+  pdfs: "++id, name, type, data, timestamp",
   attachments: "++id, type, name, data, timestamp",
   postApiData: "++id, name, data, timestamp",
 });
@@ -15,21 +17,30 @@ const DexieDemo = () => {
   const webcamRef = useRef(null);
   console.log("apiItems", apiItems);
   const loadAttachments = async () => {
-    const all = await db.attachments.orderBy("timestamp").reverse().toArray();
+    const pdfData = await db.pdfs.orderBy("timestamp").reverse().toArray();
+    const imageData = await db.images.orderBy("timestamp").reverse().toArray();
     const allApiData = await db.postApiData
       .orderBy("timestamp")
       .reverse()
       .toArray();
 
-    const totalBytes = all.reduce((sum, att) => {
-      return sum + Math.ceil((att.data.length * 3) / 4);
-    }, 0);
+    const imageBytes = imageData.reduce((sum, img) => sum + Math.ceil((img.data.length * 3) / 4), 0);
+    const pdfBytes = pdfData.reduce(
+      (sum, pdf) => sum + (pdf.data?.size || 0),
+      0
+    );
+    // const all = await db.attachments.orderBy("timestamp").reverse().toArray();
+    
+    // const totalBytes = all.reduce((sum, att) => {
+    //   return sum + Math.ceil((att.data?.length * 3) / 4);
+    // }, 0);
     const apiDataBytes = allApiData.reduce((sum, item) => {
-      return sum + new TextEncoder().encode(JSON.stringify(item.data)).length;
+      return sum + new TextEncoder().encode(JSON.stringify(item.data))?.length;
     }, 0);
     setApiItems(allApiData[0].data);
-    setAttachments(all);
-    setStorageUsed(totalBytes + apiDataBytes);
+    // setAttachments(all);
+    setAttachments({ images: imageData, pdfs: pdfData });
+    setStorageUsed(imageBytes + apiDataBytes + pdfBytes);
   };
 
   const formatBytes = (bytes) => {
@@ -83,26 +94,58 @@ const DexieDemo = () => {
     loadAttachments();
   }, []);
 
+  // const handleFileUpload = async (e) => {
+  //   const file = e.target.files[0];
+  //   console.log("file>>>>>>>>>>>>>>",file)
+  //   if (!file) return;
+
+  //     // const file = e.target.files[0];
+  //     // if (!file) return;
+
+  //     await db.attachments.add({
+  //       name: file.name,
+  //       type: file.type,
+  //       data: file,
+  //       timestamp: Date.now(),
+  //     });
+  //     // loadAttachments();
+  //   };
+
   const handleFileUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = async () => {
-      await db.attachments.add({
+    const isImage = file.type.startsWith("image/");
+
+    if (isImage) {
+      const reader = new FileReader();
+      reader.onload = async (event) => {
+        const base64 = event.target.result;
+        await db.images.add({
+          name: file.name,
+          type: file.type,
+          data: base64,
+          timestamp: Date.now(),
+        });
+        loadAttachments();
+      };
+      reader.readAsDataURL(file);
+    } else if (file.type === "application/pdf") {
+      const blob = new Blob([await file.arrayBuffer()], { type: file.type });
+      await db.pdfs.add({
         name: file.name,
         type: file.type,
-        data: reader.result,
+        data: blob,
         timestamp: Date.now(),
       });
       loadAttachments();
-    };
-    reader.readAsDataURL(file);
+    }
   };
+
   const captureFromWebcam = async () => {
     const imageSrc = webcamRef.current.getScreenshot();
 
-    await db.attachments.add({
+    await db.images.add({
       name: `webcam-${Date.now()}.png`,
       type: "image/png",
       data: imageSrc,
@@ -114,11 +157,18 @@ const DexieDemo = () => {
   };
 
   const clearAll = async () => {
-    await db.attachments.clear();
+    await db.images.clear();
+    await db.pdfs.clear();
+    await db.postApiData.clear();
     loadAttachments();
   };
-  const deleteAttachment = async (id) => {
-    await db.attachments.delete(id);
+  const deleteImage = async (id) => {
+    await db.images.delete(id);
+    loadAttachments();
+  };
+
+  const deletePdf = async (id) => {
+    await db.pdfs.delete(id);
     loadAttachments();
   };
   return (
@@ -160,32 +210,55 @@ const DexieDemo = () => {
         </div>
       )}
 
-      <div
-        style={{
-          margin: 10,
-          display: "flex",
-          flexWrap: "wrap",
-          alignItems: "center",
-        }}
-      >
-        {attachments.map((att) => (
+      <div>
+        {/* {attachments.map((att) => {
+          
+         
+          return (
           <div key={att.id} style={{ margin: 10 }}>
             {att.type.startsWith("image") ? (
               <img
-                src={att.data}
+                src={att.data }
                 alt={att.name}
                 style={{ width: 100, borderRadius: 4 }}
               />
             ) : (
-              <a href={att.data} download={att.name}>
+              <a href={att.data  } download={att.name}>
                 {att.name}
               </a>
             )}
             <button onClick={() => deleteAttachment(att.id)}> Delete</button>
           </div>
-        ))}
+        )})} */}
+        <div>
+          <h3>Images</h3>
+          <div style={{ display: "flex", flexWrap: "wrap" }}>
+            {attachments?.images?.map((att) => (
+              <div key={att.id} style={{ margin: 10 }}>
+                <img src={att.data} alt={att.name} style={{ width: 100 }} />
+                <button onClick={() => deleteImage(att.id)}>Delete</button>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div>
+          <h3>PDFs</h3>
+          <div style={{ display: "flex", flexWrap: "wrap" }}>
+            {attachments.pdfs?.map((att) => {
+              const objectUrl = URL.createObjectURL(att.data);
+              return (
+                <div key={att.id} style={{ margin: 10 }}>
+                  <a href={objectUrl} download={att.name}>
+                    {att.name}
+                  </a>
+                  <button onClick={() => deletePdf(att.id)}>Delete</button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
       </div>
-      {apiItems && apiItems.length > 0 && (
+      {apiItems && apiItems?.length > 0 && (
         <>
           <h3>API Data</h3>
           <>
