@@ -11,7 +11,9 @@
   },
   "dependencies": {
     "dexie": "^4.0.11",
+    "events": "^3.3.0",
     "idb-keyval": "^6.2.2",
+    "pouchdb-browser": "^9.0.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-webcam": "^7.2.0"

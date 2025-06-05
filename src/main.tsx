@@ -5,6 +5,7 @@ import App from './App.tsx'
 import DownloadManager from './components/DownloadManager.tsx'
 import StatusCheck from './components/StatusCheck.tsx'
 import DexieDemo from './components/DexieDemo.tsx'
+import CameraCapture from './components/CameraCapture.tsx'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
@@ -15,6 +16,8 @@ createRoot(document.getElementById('root')!).render(
      */}
     < StatusCheck />
     <DexieDemo/>
+      {/* < StatusCheck /> */}
+      <CameraCapture />
     </>
   </StrictMode>,
 )
