@@ -4,6 +4,7 @@ import './index.css'
 import App from './App.tsx'
 import DownloadManager from './components/DownloadManager.tsx'
 import StatusCheck from './components/StatusCheck.tsx'
+import DexieDemo from './components/DexieDemo.tsx'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
@@ -13,6 +14,7 @@ createRoot(document.getElementById('root')!).render(
     {/* <DownloadManager />
      */}
     < StatusCheck />
+    <DexieDemo/>
     </>
   </StrictMode>,
 )
