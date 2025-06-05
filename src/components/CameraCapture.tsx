@@ -7,6 +7,7 @@ const CameraCapture = () => {
     const canvasRef = useRef(null);
     const [imageUrl, setImageUrl] = useState(null);
     const [data, setData] = useState([]);
+    const[total,setTotal]=useState()
 
     const startCamera = async () => {
         const stream = await navigator.mediaDevices.getUserMedia({ video: true });
@@ -73,11 +74,19 @@ const CameraCapture = () => {
                 }
             }
         }
-
+        setTotal(totalSize)
         console.log('Total data size:', totalSize / 1024, 'KB');
         console.log('All offline data:', allDocs);
         setData(images); // now an array of {id, url, name}
     };
+    const formatBytes = (bytes) => {
+        if (bytes < 1024) return `${bytes} B`;
+        if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`;
+        if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(2)} MB`;
+        if (bytes < 1024 ** 4) return `${(bytes / 1024 ** 3).toFixed(2)} GB`;
+        return `${(bytes / 1024 ** 4).toFixed(2)} TB`;
+      };
+    
     const clearData = async()=>{
         try {
         //   const doc = await db.get('camera-data');   
@@ -92,7 +101,7 @@ const CameraCapture = () => {
       }
     return (
         <div>
-            
+            Storage used: <strong>{formatBytes(total)}</strong>
             <video ref={videoRef} autoPlay style={{ width: '100%' }} />
             <canvas ref={canvasRef} style={{ display: 'none' }} />
             <button onClick={startCamera}>Start Camera</button>
