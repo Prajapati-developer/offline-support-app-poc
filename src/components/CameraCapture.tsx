@@ -78,15 +78,28 @@ const CameraCapture = () => {
         console.log('All offline data:', allDocs);
         setData(images); // now an array of {id, url, name}
     };
-
+    const clearData = async()=>{
+        try {
+        //   const doc = await db.get('camera-data');   
+        //   console.log("doc",doc)   
+        //   await db.remove(doc);      
+        await db.destroy();       
+          console.log(`deleted the users data from localstorage`);
+        } catch (err) {
+          console.error(`failed`, err);
+        }
+     
+      }
     return (
         <div>
+            
             <video ref={videoRef} autoPlay style={{ width: '100%' }} />
             <canvas ref={canvasRef} style={{ display: 'none' }} />
             <button onClick={startCamera}>Start Camera</button>
             <button onClick={capture}>Capture</button>
+            <button onClick={clearData}>Clear</button>
             <button onClick={viewAllDocs} style={{ marginLeft: '1rem' }}>View Saved Images (Console)</button>
-            {imageUrl && <img src={imageUrl} alt="Captured" width="300" />}
+            {/* {imageUrl && <img src={imageUrl} alt="Captured" width="300" />} */}
 
             <div style={{ marginTop: '2rem' }}>
                 <h3>Saved Images</h3>
