@@ -1,6 +1,24 @@
-// CameraCapture.js
 import { useEffect, useRef, useState } from 'react';
 import { db } from '../utils/db';
+import { deflateSync, inflateSync } from 'fflate';
+
+const compressBlob = async (blob: Blob): Promise<Uint8Array> => {
+    const buffer = await blob.arrayBuffer();
+
+    // return compressSync(new Uint8Array(buffer),{ level: 6, mem: 12});
+    return deflateSync(new Uint8Array(buffer), { level: 6 });
+};
+
+const decompressToBlob = (compressed, type) => {
+    // const arrayBuffer = await compressed.arrayBuffer();
+    // const decompressed = decompressSync(new Uint8Array(arrayBuffer));
+    // return new Blob([decompressed], { type });
+    // const decompressed = decompressSync(compressed);
+    const decompressed = inflateSync(compressed);
+
+    return new Blob([decompressed], { type });
+};
+
 
 const CameraCapture = () => {
     const videoRef = useRef(null);
@@ -15,6 +33,23 @@ const CameraCapture = () => {
         videoRef.current.srcObject = stream;
     };
 
+    // Helper to convert Blob to ArrayBuffer
+    const blobToArrayBuffer = async (blob) => {
+        if (!(blob instanceof Blob)) {
+            console.error("blobToArrayBuffer received non-Blob:", blob);
+            throw new TypeError('Expected a Blob');
+        }
+
+        // return new Promise((resolve, reject) => {
+        //     const reader = new FileReader();
+        //     reader.onload = () => resolve(reader.result);
+        //     reader.onerror = reject;
+        //     reader.readAsArrayBuffer(blob);
+        // });
+    };
+
+
+
     const capture = () => {
         const canvas = canvasRef.current;
         const video = videoRef.current;
@@ -23,74 +58,65 @@ const CameraCapture = () => {
         const ctx = canvas.getContext('2d');
         ctx.drawImage(video, 0, 0);
         canvas.toBlob(async (blob) => {
-            const id = new Date().toISOString();
+            console.log('blob: ', blob);
+            const blobs = new Blob([await blob.arrayBuffer()], { type: blob.type });
 
-            // Save the image as an attachment in PouchDB
+            const compressedUint8Array = await compressBlob(blobs);
+            const compressedBlob = new Blob([compressedUint8Array], { type: 'images/*' });
+
             await db.put({
-                _id: id,
+                _id: blob.name,
                 _attachments: {
-                    'photo.jpg': {
-                        content_type: 'image/jpeg',
-                        data: blob
+                    [blob.name]: {
+                        content_type: 'images/*',
+                        data: compressedBlob // ✅
                     }
                 }
             });
 
-            // Display preview
             setImageUrl(URL.createObjectURL(blob));
+            viewAllDocs();
         }, 'image/jpeg');
-        viewAllDocs();
+
+
     };
 
     const viewAllDocs = async () => {
         const allDocs = await db.allDocs({
             include_docs: true,
             attachments: true,
-            binary: true
+            // binary: true
         });
 
         let totalSize = 0;
         const files = [];
-
+        console.log("allDocs.rows", allDocs.rows);
         for (const row of allDocs.rows) {
+            console.log('row: ', row);
             const attachments = row.doc._attachments;
             if (attachments) {
                 for (const [name, attachment] of Object.entries(attachments)) {
-                    let url = '';
-                    let type = '';
-
-                    if (attachment.data instanceof Blob) {
-                        totalSize += attachment.data.size;
-                        url = URL.createObjectURL(attachment.data);
-                    } else if (typeof attachment.data === 'string') {
-                        const base64Length = attachment.data.length;
-                        totalSize += Math.ceil((base64Length * 3) / 4);
-                        url = `data:${attachment.content_type};base64,${attachment.data}`;
-                    }
-
-                    // Determine file type from content_type
-                    if (attachment.content_type === 'application/pdf') {
-                        type = 'pdf';
-                    } else if (attachment.content_type.startsWith('image/')) {
-                        type = 'image';
-                    } else {
-                        type = 'unknown';
-                    }
+                    console.log('attachment: ', attachment);
+                    const blob = decompressToBlob(attachment, "application/pdf");
+                    const objectUrl = URL.createObjectURL(blob);
 
                     files.push({
                         id: row.id,
-                        url,
-                        name,
-                        type
+                        objectUrl,
+                        name: name,
+                        type: attachment.content_type,
+                        compressedSize: row.doc.compressedSize,
+                        originalSize: row.doc.originalSize
                     });
+
                 }
             }
         }
-
         setTotal(totalSize);
         console.log('Total data size:', totalSize / 1024, 'KB');
         console.log('All offline data:', allDocs);
         setData(files); // now includes both images and PDFs
+        console.log('files: ', files);
     };
 
     const formatBytes = (bytes) => {
@@ -119,22 +145,31 @@ const CameraCapture = () => {
 
     const handlePdfUpload = async (event) => {
         const file = event.target.files[0];
+        console.log('file: ', file);
         if (!file || file.type !== 'application/pdf') return;
 
         const id = new Date().toISOString();
 
+        const blob = new Blob([await file.arrayBuffer()], { type: file.type });
+
+        const compressedUint8Array = await compressBlob(blob);
+        const compressedBlob = new Blob([compressedUint8Array], { type: 'application/pdf' });
+
         await db.put({
             _id: id,
+            compressedSize: formatBytes(compressedBlob.size) || 10,
+            originalSize: formatBytes(file.size) || 10,
             _attachments: {
-                'document.pdf': {
+                [file.name]: {
                     content_type: 'application/pdf',
-                    data: file
+                    data: compressedBlob,
                 }
             }
         });
-
         alert('PDF uploaded and saved offline.');
+        viewAllDocs();
     };
+
 
     return (
         <div>
@@ -157,10 +192,14 @@ const CameraCapture = () => {
 
             {data.map((item) => (
                 <div key={item.id} style={{ textAlign: 'center' }}>
-                    {item.type === 'pdf' ? (
-                        <a href={item.url} target="_blank" rel="noopener noreferrer">
-                            📄 {item.name}
-                        </a>
+                    {item.type.includes('pdf') ? (
+                        <>
+                            <a href={item.objectUrl} target="_blank" rel="noopener noreferrer">
+                                {item.name}
+                            </a>
+                            <div>Original File Size: {item.originalSize}</div>
+                            <div>Compressed File Size: {item.compressedSize}</div>
+                        </>
                     ) : (
                         <img src={item.url} alt={item.name} width="150" />
                     )}
