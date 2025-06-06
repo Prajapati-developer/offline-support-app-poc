@@ -157,8 +157,8 @@ const DexieDemo = () => {
     if (!file) return;
     console.log("file>>>>>>>", file, e);
     
-    const blob = new Blob([await file.arrayBuffer()], { type: file.type });
-    const compressedData = await compressBlob(blob);
+    // const blob = new Blob([await file.arrayBuffer()], { type: file.type });
+    const compressedData = await compressBlob(file);
     console.log("compressedData", compressedData, compressedData.length);
     if (file.type.startsWith("image/")) {
       await db.images.add({
