@@ -1,30 +1,66 @@
 import React, { useEffect, useRef, useState } from "react";
 import Dexie from "dexie";
 import Webcam from "react-webcam";
+import { deflateSync, inflateSync } from "fflate";
 // import { compressSync, decompressSync, strToU8, strFromU8 } from "fflate";
 const db = new Dexie("react-dexie-demo");
 db.version(1).stores({
-  images: "++id, name, type, data, timestamp",
-  pdfs: "++id, name, type, data, timestamp",
+  images:
+    "++id, name, type, data, fileSize, blobSize, compressedSize,timestamp",
+  pdfs: "++id, name, type, data,fileSize, blobSize, compressedSize, timestamp",
   attachments: "++id, type, name, data, timestamp",
   postApiData: "++id, name, data, timestamp",
 });
-// const compressData = (string) => {
-//   const uint8 = strToU8(string);              
-//   const compressed = compressSync(uint8);     
-//   return compressed;                          
+const compressBlob = async (blob: Blob): Promise<Uint8Array> => {
+  const buffer = await blob.arrayBuffer();
+
+  // return compressSync(new Uint8Array(buffer),{ level: 6, mem: 12});
+  return deflateSync(new Uint8Array(buffer), { level: 6 });
+};
+
+const decompressToBlob = (compressed, type) => {
+  // const arrayBuffer = await compressed.arrayBuffer();
+  // const decompressed = decompressSync(new Uint8Array(arrayBuffer));
+  // return new Blob([decompressed], { type });
+  // const decompressed = decompressSync(compressed);
+  const decompressed = inflateSync(compressed);
+
+  return new Blob([decompressed], { type });
+};
+
+// const compressBlob = async (file: File): Promise<{
+//   compressed: Uint8Array;
+//   fileSize: number;
+//   blobSize: number;
+//   compressedSize: number;
+// }> => {
+//   console.log("file>>>>>>>>>>>>",file)
+//   const fileSize = file.size;
+
+//   const blob = new Blob([await file.arrayBuffer()], { type: file.type });
+//   const blobSize = blob.size;
+
+//   const buffer = await blob.arrayBuffer();
+//   const original = new Uint8Array(buffer);
+//   const compressed = compressSync(original);
+
+//   return {
+//     compressed,
+//     fileSize,
+//     blobSize,
+//     compressedSize: compressed.length,
+//   };
 // };
-// const decompressData = (compressedUint8) => {
-//   const decompressed = decompressSync(compressedUint8); 
-//   return strFromU8(decompressed);                     
-// };
+
 const DexieDemo = () => {
+  const [loading, setLoading] = useState(false);
   const [attachments, setAttachments] = useState([]);
   const [cameraOn, setCameraOn] = useState(false);
   const [storageUsed, setStorageUsed] = useState(0);
   const [apiItems, setApiItems] = useState([]);
   const webcamRef = useRef(null);
   console.log("apiItems", apiItems);
+
   const loadAttachments = async () => {
     const pdfData = await db.pdfs.orderBy("timestamp").reverse().toArray();
     const imageData = await db.images.orderBy("timestamp").reverse().toArray();
@@ -33,18 +69,28 @@ const DexieDemo = () => {
       .reverse()
       .toArray();
 
-    const imageBytes = imageData.reduce((sum, img) => sum + Math.ceil((img.data.length * 3) / 4), 0);
-    const pdfBytes = pdfData.reduce(
-      (sum, pdf) => sum + (pdf.data?.size || 0),
+    // const imageBytes = imageData.reduce(
+    //   (sum, img) => sum + Math.ceil((img.data.length * 3) / 4),
+    //   0
+    // );
+    // const pdfBytes = pdfData.reduce(
+    //   (sum, pdf) => sum + (pdf.data?.size || 0),
+    //   0
+    // );
+
+    // const apiDataBytes = allApiData.reduce((sum, item) => {
+    //   return sum + new TextEncoder().encode(JSON.stringify(item.data))?.length;
+    // }, 0);
+    const imageBytes = imageData.reduce(
+      (sum, img) => sum + (img.compressedSize || 0),
       0
     );
-    // const all = await db.attachments.orderBy("timestamp").reverse().toArray();
-    
-    // const totalBytes = all.reduce((sum, att) => {
-    //   return sum + Math.ceil((att.data?.length * 3) / 4);
-    // }, 0);
+    const pdfBytes = pdfData.reduce(
+      (sum, pdf) => sum + (pdf.compressedSize || 0),
+      0
+    );
     const apiDataBytes = allApiData.reduce((sum, item) => {
-      return sum + new TextEncoder().encode(JSON.stringify(item.data))?.length;
+      return sum + new TextEncoder().encode(JSON.stringify(item.data)).length;
     }, 0);
     setApiItems(allApiData[0].data);
     // setAttachments(all);
@@ -53,6 +99,7 @@ const DexieDemo = () => {
   };
 
   const formatBytes = (bytes) => {
+    if (bytes <= 0) return "0 B";
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`;
     if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(2)} MB`;
@@ -103,66 +150,103 @@ const DexieDemo = () => {
     loadAttachments();
   }, []);
 
-  // const handleFileUpload = async (e) => {
-  //   const file = e.target.files[0];
-  //   console.log("file>>>>>>>>>>>>>>",file)
-  //   if (!file) return;
-
-  //     // const file = e.target.files[0];
-  //     // if (!file) return;
-
-  //     await db.attachments.add({
-  //       name: file.name,
-  //       type: file.type,
-  //       data: file,
-  //       timestamp: Date.now(),
-  //     });
-  //     // loadAttachments();
-  //   };
-
+  
   const handleFileUpload = async (e) => {
+    setLoading(true);
     const file = e.target.files[0];
     if (!file) return;
+    console.log("file>>>>>>>", file, e);
+    
+    const blob = new Blob([await file.arrayBuffer()], { type: file.type });
+    const compressedData = await compressBlob(blob);
+    console.log("compressedData", compressedData, compressedData.length);
+    if (file.type.startsWith("image/")) {
+      await db.images.add({
+        name: file.name,
+        type: file.type,
+        data: compressedData,
+        fileSize: file.size,
 
-    const isImage = file.type.startsWith("image/");
-
-    if (isImage) {
-      const reader = new FileReader();
-      reader.onload = async (event) => {
-        const base64 = event.target.result;
-        await db.images.add({
-          name: file.name,
-          type: file.type,
-          data: base64,
-          timestamp: Date.now(),
-        });
-        loadAttachments();
-      };
-      reader.readAsDataURL(file);
+        compressedSize: compressedData.length,
+        timestamp: Date.now(),
+      });
     } else if (file.type === "application/pdf") {
-      const blob = new Blob([await file.arrayBuffer()], { type: file.type });
       await db.pdfs.add({
         name: file.name,
         type: file.type,
-        data: blob,
+        data: compressedData,
+        fileSize: file.size,
+
+        compressedSize: compressedData.length,
         timestamp: Date.now(),
       });
-      loadAttachments();
     }
+
+    await loadAttachments();
+    setLoading(false);
   };
 
+  // const handleFileUpload = async (e) => {
+  //   const file = e.target.files[0];
+  //   if (!file) return;
+
+  //   const isImage = file.type.startsWith("image/");
+
+  //   if (isImage) {
+  //     const reader = new FileReader();
+  //     reader.onload = async (event) => {
+  //       const base64 = event.target.result;
+  //       await db.images.add({
+  //         name: file.name,
+  //         type: file.type,
+  //         data: base64,
+  //         timestamp: Date.now(),
+  //       });
+  //       loadAttachments();
+  //     };
+  //     reader.readAsDataURL(file);
+  //   } else if (file.type === "application/pdf") {
+  //     const blob = new Blob([await file.arrayBuffer()], { type: file.type });
+  //     await db.pdfs.add({
+  //       name: file.name,
+  //       type: file.type,
+  //       data: blob,
+  //       timestamp: Date.now(),
+  //     });
+  //     loadAttachments();
+  //   }
+  // };
+
+  // const captureFromWebcam = async () => {
+  //   const imageSrc = webcamRef.current.getScreenshot();
+
+  //   await db.images.add({
+  //     name: `webcam-${Date.now()}.png`,
+  //     type: "image/png",
+  //     data: imageSrc,
+  //     timestamp: Date.now(),
+  //   });
+
+  //   setCameraOn(false);
+  //   loadAttachments();
+  // };
   const captureFromWebcam = async () => {
     const imageSrc = webcamRef.current.getScreenshot();
 
+    const res = await fetch(imageSrc);
+    setLoading(true);
+    const blob = await res.blob();
+    const compressedData = await compressBlob(blob);
     await db.images.add({
       name: `webcam-${Date.now()}.png`,
       type: "image/png",
-      data: imageSrc,
+      data: compressedData,
       timestamp: Date.now(),
     });
 
     setCameraOn(false);
-    loadAttachments();
+    await loadAttachments();
+    setLoading(false);
   };
 
   const clearAll = async () => {
@@ -197,7 +281,11 @@ const DexieDemo = () => {
       <button onClick={fetchAndSaveApiData} style={{ marginLeft: 10 }}>
         Fetch API Data
       </button>
-
+      <p>
+        {loading
+          ? "saving data to localstorage please wait......"
+          : "data saved successfully"}
+      </p>
       {cameraOn && (
         <div style={{ marginTop: 20 }}>
           <Webcam
@@ -242,24 +330,36 @@ const DexieDemo = () => {
         <div>
           <h3>Images</h3>
           <div style={{ display: "flex", flexWrap: "wrap" }}>
-            {attachments?.images?.map((att) => (
-              <div key={att.id} style={{ margin: 10 }}>
-                <img src={att.data} alt={att.name} style={{ width: 100 }} />
-                <button onClick={() => deleteImage(att.id)}>Delete</button>
-              </div>
-            ))}
+            {attachments?.images?.map((att) => {
+              if (!(att.data instanceof Uint8Array)) return null;
+              const blob = decompressToBlob(att.data, att.type);
+              const objectUrl = URL.createObjectURL(blob);
+              return (
+                <div key={att.id} style={{ margin: 10 }}>
+                  <img src={objectUrl} alt={att.name} style={{ width: 100 }} />
+                  <button onClick={() => deleteImage(att.id)}>Delete</button>
+                </div>
+              );
+            })}
           </div>
         </div>
         <div>
           <h3>PDFs</h3>
           <div style={{ display: "flex", flexWrap: "wrap" }}>
             {attachments.pdfs?.map((att) => {
-              const objectUrl = URL.createObjectURL(att.data);
+              console.log("att>>>>>>>", att);
+              if (!(att.data instanceof Uint8Array)) return null;
+              const blob = decompressToBlob(att.data, att.type);
+              const objectUrl = URL.createObjectURL(blob);
               return (
                 <div key={att.id} style={{ margin: 10 }}>
                   <a href={objectUrl} download={att.name}>
                     {att.name}
                   </a>
+                  
+                  <div>Original File Size: {formatBytes(att.fileSize)}</div>
+                  <div>Compressed File Size: {formatBytes(att.compressedSize)}</div>
+
                   <button onClick={() => deletePdf(att.id)}>Delete</button>
                 </div>
               );
@@ -274,9 +374,6 @@ const DexieDemo = () => {
             {apiItems.map((item) => (
               <p key={item.id} style={{ marginBottom: 10, display: "flex" }}>
                 <strong>{item.title}</strong>
-
-                {/* <div>{item.body}</div> */}
-
                 <button onClick={() => deleteApiItem(item.id)}>Delete</button>
               </p>
             ))}
