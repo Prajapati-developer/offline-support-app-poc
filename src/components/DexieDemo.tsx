@@ -92,7 +92,7 @@ const DexieDemo = () => {
     const apiDataBytes = allApiData.reduce((sum, item) => {
       return sum + new TextEncoder().encode(JSON.stringify(item.data)).length;
     }, 0);
-    setApiItems(allApiData[0].data);
+    setApiItems(allApiData[0]?.data);
     // setAttachments(all);
     setAttachments({ images: imageData, pdfs: pdfData });
     setStorageUsed(imageBytes + apiDataBytes + pdfBytes);
@@ -232,15 +232,18 @@ const DexieDemo = () => {
   // };
   const captureFromWebcam = async () => {
     const imageSrc = webcamRef.current.getScreenshot();
-
     const res = await fetch(imageSrc);
     setLoading(true);
     const blob = await res.blob();
     const compressedData = await compressBlob(blob);
+    console.log("compressedData",compressedData)
     await db.images.add({
       name: `webcam-${Date.now()}.png`,
       type: "image/png",
       data: compressedData,
+      fileSize: blob.size,
+
+      compressedSize: compressedData.length,
       timestamp: Date.now(),
     });
 
@@ -337,6 +340,9 @@ const DexieDemo = () => {
               return (
                 <div key={att.id} style={{ margin: 10 }}>
                   <img src={objectUrl} alt={att.name} style={{ width: 100 }} />
+                  <div>Original File Size: {formatBytes(att.fileSize)}</div>
+                  <div>Compressed File Size: {formatBytes(att.compressedSize)}</div>
+
                   <button onClick={() => deleteImage(att.id)}>Delete</button>
                 </div>
               );
