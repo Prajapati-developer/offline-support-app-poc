@@ -4,50 +4,70 @@ import { deflateSync, inflateSync } from 'fflate';
 
 const compressBlob = async (blob: Blob): Promise<Uint8Array> => {
     const buffer = await blob.arrayBuffer();
-
-    // return compressSync(new Uint8Array(buffer),{ level: 6, mem: 12});
     return deflateSync(new Uint8Array(buffer), { level: 6 });
 };
 
-const decompressToBlob = (compressed, type) => {
-    // const arrayBuffer = await compressed.arrayBuffer();
-    // const decompressed = decompressSync(new Uint8Array(arrayBuffer));
-    // return new Blob([decompressed], { type });
-    // const decompressed = decompressSync(compressed);
-    const decompressed = inflateSync(compressed);
+const decompressToBlob = (base64OrUint8, type: string) => {
+    let compressedData;
 
+    if (typeof base64OrUint8 === 'string') {
+        // Decode base64
+        const binaryStr = atob(base64OrUint8);
+        const len = binaryStr.length;
+        compressedData = new Uint8Array(len);
+        for (let i = 0; i < len; i++) {
+            compressedData[i] = binaryStr.charCodeAt(i);
+        }
+    } else {
+        compressedData = base64OrUint8;
+    }
+
+    const decompressed = inflateSync(compressedData);
     return new Blob([decompressed], { type });
 };
 
+const uint8ArrayToBase64 = (uint8Array) => {
+    return new Promise((resolve) => {
+        const blob = new Blob([uint8Array]);
+        const reader = new FileReader();
+        reader.onloadend = () => {
+            const base64 = reader.result.split(',')[1];
+            resolve(base64);
+        };
+        reader.readAsDataURL(blob);
+    });
+};
+
+
+const formatBytes = (bytes) => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`;
+    if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(2)} MB`;
+    return `${(bytes / 1024 ** 3).toFixed(2)} GB`;
+};
 
 const CameraCapture = () => {
     const videoRef = useRef(null);
     const canvasRef = useRef(null);
-    const [imageUrl, setImageUrl] = useState(null);
     const [data, setData] = useState([]);
-    const [total, setTotal] = useState()
+    const [totalOriginalSize, setTotalOriginalSize] = useState(0);
+    const [totalCompressedSize, setTotalCompressedSize] = useState(0);
+
     const [startCameraFlag, setStartCameraFlag] = useState(false);
+
     const startCamera = async () => {
         setStartCameraFlag(true);
         const stream = await navigator.mediaDevices.getUserMedia({ video: true });
         videoRef.current.srcObject = stream;
     };
 
-    // Helper to convert Blob to ArrayBuffer
-    const blobToArrayBuffer = async (blob) => {
-        if (!(blob instanceof Blob)) {
-            console.error("blobToArrayBuffer received non-Blob:", blob);
-            throw new TypeError('Expected a Blob');
+    const stopCamera = () => {
+        if (stream) {
+            stream.getTracks().forEach(track => track.stop());
         }
-
-        // return new Promise((resolve, reject) => {
-        //     const reader = new FileReader();
-        //     reader.onload = () => resolve(reader.result);
-        //     reader.onerror = reject;
-        //     reader.readAsArrayBuffer(blob);
-        // });
+        setStartCameraFlag(false);
+        setStream(null);
     };
-
 
 
     const capture = () => {
@@ -58,157 +78,196 @@ const CameraCapture = () => {
         const ctx = canvas.getContext('2d');
         ctx.drawImage(video, 0, 0);
         canvas.toBlob(async (blob) => {
-            console.log('blob: ', blob);
-            const blobs = new Blob([await blob.arrayBuffer()], { type: blob.type });
+            if (!blob) return;
 
-            const compressedUint8Array = await compressBlob(blobs);
-            const compressedBlob = new Blob([compressedUint8Array], { type: 'images/*' });
+            const id = new Date().toISOString();
+            const compressedData = await compressBlob(blob);
 
             await db.put({
-                _id: blob.name,
+                _id: id,
+                originalSize: blob.size,
+                compressedSize: compressedData.length,
                 _attachments: {
-                    [blob.name]: {
-                        content_type: 'images/*',
-                        data: compressedBlob // ✅
+                    [`image-${Date.now()}.jpeg`]: {
+                        content_type: blob.type,
+                        data: btoa(String.fromCharCode(...compressedData)) // Store as base64
                     }
                 }
             });
 
-            setImageUrl(URL.createObjectURL(blob));
             viewAllDocs();
         }, 'image/jpeg');
-
-
     };
-
-    const viewAllDocs = async () => {
-        const allDocs = await db.allDocs({
-            include_docs: true,
-            attachments: true,
-            // binary: true
-        });
-
-        let totalSize = 0;
-        const files = [];
-        console.log("allDocs.rows", allDocs.rows);
-        for (const row of allDocs.rows) {
-            console.log('row: ', row);
-            const attachments = row.doc._attachments;
-            if (attachments) {
-                for (const [name, attachment] of Object.entries(attachments)) {
-                    console.log('attachment: ', attachment);
-                    const blob = decompressToBlob(attachment, "application/pdf");
-                    const objectUrl = URL.createObjectURL(blob);
-
-                    files.push({
-                        id: row.id,
-                        objectUrl,
-                        name: name,
-                        type: attachment.content_type,
-                        compressedSize: row.doc.compressedSize,
-                        originalSize: row.doc.originalSize
-                    });
-
-                }
-            }
-        }
-        setTotal(totalSize);
-        console.log('Total data size:', totalSize / 1024, 'KB');
-        console.log('All offline data:', allDocs);
-        setData(files); // now includes both images and PDFs
-        console.log('files: ', files);
-    };
-
-    const formatBytes = (bytes) => {
-        if (bytes < 1024) return `${bytes} B`;
-        if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`;
-        if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(2)} MB`;
-        if (bytes < 1024 ** 4) return `${(bytes / 1024 ** 3).toFixed(2)} GB`;
-        return `${(bytes / 1024 ** 4).toFixed(2)} TB`;
-    };
-
-    const clearData = async () => {
-        try {
-            //   const doc = await db.get('camera-data');   
-            //   console.log("doc",doc)   
-            //   await db.remove(doc);      
-            await db.destroy();
-            console.log(`deleted the users data from localstorage`);
-        } catch (err) {
-            console.error(`failed`, err);
-        }
-
-    }
-    useEffect(() => {
-        viewAllDocs()
-    }, [])
 
     const handlePdfUpload = async (event) => {
         const file = event.target.files[0];
-        console.log('file: ', file);
         if (!file || file.type !== 'application/pdf') return;
 
         const id = new Date().toISOString();
-
         const blob = new Blob([await file.arrayBuffer()], { type: file.type });
+        const compressedData = await compressBlob(blob);
 
-        const compressedUint8Array = await compressBlob(blob);
-        const compressedBlob = new Blob([compressedUint8Array], { type: 'application/pdf' });
+        const base64Data = await uint8ArrayToBase64(compressedData); // Safe conversion
 
         await db.put({
             _id: id,
-            compressedSize: formatBytes(compressedBlob.size) || 10,
-            originalSize: formatBytes(file.size) || 10,
+            originalSize: file.size,
+            compressedSize: compressedData.length,
             _attachments: {
                 [file.name]: {
                     content_type: 'application/pdf',
-                    data: compressedBlob,
+                    data: base64Data
                 }
             }
         });
+
         alert('PDF uploaded and saved offline.');
+        viewAllDocs();
+    };
+    const handleImageUpload = async (event) => {
+        const file = event.target.files[0];
+        if (!file || !file.type.startsWith('image/')) return;
+
+        const id = new Date().toISOString();
+        const blob = new Blob([await file.arrayBuffer()], { type: file.type });
+        const compressedData = await compressBlob(blob);
+        const base64Data = await uint8ArrayToBase64(compressedData);
+
+        await db.put({
+            _id: id,
+            originalSize: file.size,
+            compressedSize: compressedData.length,
+            _attachments: {
+                [file.name]: {
+                    content_type: file.type,
+                    data: base64Data,
+                },
+            },
+        });
+
+        alert('Image uploaded and saved offline.');
         viewAllDocs();
     };
 
 
+    const viewAllDocs = async () => {
+        const allDocs = await db.allDocs({ include_docs: true, attachments: true });
+
+        let totalOriginal = 0;
+        let totalCompressed = 0;
+        const files = [];
+
+        for (const row of allDocs.rows) {
+            const { _attachments, originalSize = 0, compressedSize = 0 } = row.doc;
+            totalOriginal += originalSize;
+            totalCompressed += compressedSize;
+
+            if (_attachments) {
+                for (const [name, attachment] of Object.entries(_attachments)) {
+                    const blob = decompressToBlob(attachment.data, attachment.content_type);
+                    const url = URL.createObjectURL(blob);
+
+                    files.push({
+                        id: `${row.id}__ATTACH__${name}`,
+                        url,
+                        name,
+                        type: attachment.content_type,
+                        originalSize,
+                        compressedSize
+                    });
+                }
+            }
+        }
+
+        setTotalOriginalSize(totalOriginal);
+        setTotalCompressedSize(totalCompressed);
+        setData(files);
+    };
+
+    const clearData = async () => {
+        await db.destroy();
+        window.location.reload(); // Reset state cleanly
+    };
+
+    const deleteItem = async (docId) => {
+        try {
+            const doc = await db.get(docId);
+            await db.remove(doc);
+            viewAllDocs(); // Refresh after deletion
+        } catch (err) {
+            console.error('Error deleting item:', err);
+        }
+    };
+
+    useEffect(() => {
+        viewAllDocs();
+    }, []);
+
     return (
         <div>
-            <p style={{ marginTop: 10 }}>
-                Storage used: <strong>{total && formatBytes(total)}</strong>
-            </p>
-            <input
+            <strong>Total Original Size:</strong> {formatBytes(totalOriginalSize)}<br />
+            <strong>Total Compressed Size:</strong> {formatBytes(totalCompressedSize)}<br />
+            {/* Upload Section */}
+            <strong>PDF Upload:</strong><input
                 type="file"
                 accept="application/pdf"
                 onChange={handlePdfUpload}
-                style={{ marginTop: '1rem' }}
+                style={{ marginTop: '1rem', display: 'block' }}
             />
+            <strong>Image Upload:</strong><input
+                type="file"
+                accept="image/*"
+                onChange={handleImageUpload}
+                style={{ marginTop: '0.5rem', display: 'block' }}
+            />
+
             {startCameraFlag && <video ref={videoRef} autoPlay style={{ width: '100%' }} />}
             <canvas ref={canvasRef} style={{ display: 'none' }} />
-            <button onClick={startCamera}>Start Camera</button>
-            <button onClick={capture}>Capture</button>
-            <button onClick={clearData}>Clear</button>
-            <button onClick={viewAllDocs} style={{ marginLeft: '1rem' }}>View Saved Images (Console)</button>
-            {/* {imageUrl && <img src={imageUrl} alt="Captured" width="300" />} */}
+             {/* Control Buttons */}
+             <div style={{ marginTop: '1rem' }}>
+                <button onClick={startCamera}>Start Camera</button>
+                <button onClick={stopCamera} style={{ marginLeft: '0.5rem' }}>Stop Camera</button>
+                <button onClick={capture} style={{ marginLeft: '0.5rem' }}>Capture</button>
+                <button onClick={clearData} style={{ marginLeft: '0.5rem' }}>Clear</button>
+                <button onClick={viewAllDocs} style={{ marginLeft: '0.5rem' }}>View Saved Data</button>
+            </div>
 
-            {data.map((item) => (
-                <div key={item.id} style={{ textAlign: 'center' }}>
-                    {item.type.includes('pdf') ? (
-                        <>
-                            <a href={item.objectUrl} target="_blank" rel="noopener noreferrer">
-                                {item.name}
-                            </a>
-                            <div>Original File Size: {item.originalSize}</div>
-                            <div>Compressed File Size: {item.compressedSize}</div>
-                        </>
-                    ) : (
-                        <img src={item.url} alt={item.name} width="150" />
-                    )}
-                    <p style={{ fontSize: '0.75rem' }}>{item.name}</p>
-                </div>
-            ))}
+            {/* IMAGE SECTION */}
+            <h3>Images</h3>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem' }}>
+                {data.filter(item => !item.type.includes('pdf')).map((item) => (
+                    <div key={item.id} style={{ textAlign: 'center', width: '150px' }}>
+                        <img src={item.url} alt={item.name} width="150" style={{ borderRadius: 4 }} />
+                        <div style={{ fontSize: '0.75rem' }}>{item.name}</div>
+                        <div style={{ fontSize: '0.75rem' }}>Original: {formatBytes(item.originalSize)}</div>
+                        <div style={{ fontSize: '0.75rem' }}>Compressed: {formatBytes(item.compressedSize)}</div>
+                        <button onClick={() => deleteItem(item.id.split('__ATTACH__')[0])} style={{ marginTop: '0.5rem', fontSize: '0.75rem' }}>
+                            Delete
+                        </button>
+                    </div>
+                ))}
+
+            </div>
+
+            {/* PDF SECTION */}
+            <h3 style={{ marginTop: '2rem' }}>PDFs</h3>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem' }}>
+                {data.filter(item => item.type.includes('pdf')).map((item) => (
+                    <div key={item.id} style={{ textAlign: 'center', width: '200px' }}>
+                        <a href={item.url} target="_blank" rel="noopener noreferrer" style={{ wordWrap: 'break-word' }}>
+                            {item.name}
+                        </a>
+                        <div style={{ fontSize: '0.75rem' }}>Original: {formatBytes(item.originalSize)}</div>
+                        <div style={{ fontSize: '0.75rem' }}>Compressed: {formatBytes(item.compressedSize)}</div>
+                        <button onClick={() => deleteItem(item.id.split('__ATTACH__')[0])} style={{ marginTop: '0.5rem', fontSize: '0.75rem' }}>
+                            Delete
+                        </button>
+
+                    </div>
+                ))}
+            </div>
 
         </div>
-
     );
 };
 
