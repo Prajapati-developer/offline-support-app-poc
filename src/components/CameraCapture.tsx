@@ -53,21 +53,30 @@ const CameraCapture = () => {
     const [totalOriginalSize, setTotalOriginalSize] = useState(0);
     const [totalCompressedSize, setTotalCompressedSize] = useState(0);
 
+    const streamRef = useRef<MediaStream | null>(null);
     const [startCameraFlag, setStartCameraFlag] = useState(false);
 
     const startCamera = async () => {
-        setStartCameraFlag(true);
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-        videoRef.current.srcObject = stream;
+        try {
+            const mediaStream = await navigator.mediaDevices.getUserMedia({ video: true });
+            streamRef.current = mediaStream;
+            setStartCameraFlag(true); // This will render the <video>
+        } catch (error) {
+            console.error("Camera access failed", error);
+        }
     };
-
+    
     const stopCamera = () => {
-        if (stream) {
-            stream.getTracks().forEach(track => track.stop());
+        if (streamRef.current) {
+            streamRef.current.getTracks().forEach(track => track.stop());
+            streamRef.current = null;
+        }
+        if (videoRef.current) {
+            videoRef.current.srcObject = null;
         }
         setStartCameraFlag(false);
-        setStream(null);
     };
+    
 
 
     const capture = () => {
@@ -201,7 +210,16 @@ const CameraCapture = () => {
 
     useEffect(() => {
         viewAllDocs();
+        return () => {
+            stopCamera(); // Ensure camera stops when component unmounts
+        };
     }, []);
+    useEffect(() => {
+        if (startCameraFlag && videoRef.current && streamRef.current) {
+            videoRef.current.srcObject = streamRef.current;
+        }
+    }, [startCameraFlag]);
+    
 
     return (
         <div>
