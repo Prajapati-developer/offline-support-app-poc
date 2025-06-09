@@ -14,43 +14,18 @@ db.version(1).stores({
 const compressBlob = async (blob: Blob): Promise<Uint8Array> => {
   const buffer = await blob.arrayBuffer();
 
-  // return compressSync(new Uint8Array(buffer),{ level: 6, mem: 12});
+
   return deflateSync(new Uint8Array(buffer), { level: 10 });
 };
 
 const decompressToBlob = (compressed, type) => {
-  // const arrayBuffer = await compressed.arrayBuffer();
-  // const decompressed = decompressSync(new Uint8Array(arrayBuffer));
-  // return new Blob([decompressed], { type });
-  // const decompressed = decompressSync(compressed);
+
   const decompressed = inflateSync(compressed);
 
   return new Blob([decompressed], { type });
 };
 
-// const compressBlob = async (file: File): Promise<{
-//   compressed: Uint8Array;
-//   fileSize: number;
-//   blobSize: number;
-//   compressedSize: number;
-// }> => {
-//   console.log("file>>>>>>>>>>>>",file)
-//   const fileSize = file.size;
 
-//   const blob = new Blob([await file.arrayBuffer()], { type: file.type });
-//   const blobSize = blob.size;
-
-//   const buffer = await blob.arrayBuffer();
-//   const original = new Uint8Array(buffer);
-//   const compressed = compressSync(original);
-
-//   return {
-//     compressed,
-//     fileSize,
-//     blobSize,
-//     compressedSize: compressed.length,
-//   };
-// };
 
 const DexieDemo = () => {
   const [loading, setLoading] = useState(false);
@@ -63,7 +38,8 @@ const DexieDemo = () => {
   const [deviceBrowserStorageQuota, setDeviceBrowserStorageQuota] = useState(0);
   const [deviceBrowserStorageUsed, setDeviceBrowserStorageUsed] = useState(0);
   const webcamRef = useRef(null);
-  console.log("apiItems", apiItems);
+  const [error, setError] = useState(null); 
+
  
 
   const loadAttachments = async () => {
@@ -74,18 +50,6 @@ const DexieDemo = () => {
       .reverse()
       .toArray();
 
-    // const imageBytes = imageData.reduce(
-    //   (sum, img) => sum + Math.ceil((img.data.length * 3) / 4),
-    //   0
-    // );
-    // const pdfBytes = pdfData.reduce(
-    //   (sum, pdf) => sum + (pdf.data?.size || 0),
-    //   0
-    // );
-
-    // const apiDataBytes = allApiData.reduce((sum, item) => {
-    //   return sum + new TextEncoder().encode(JSON.stringify(item.data))?.length;
-    // }, 0);
     const compressedImageBytes = imageData.reduce(
       (sum, img) => sum + (img.compressedSize || 0),
       0
@@ -112,7 +76,7 @@ const DexieDemo = () => {
     setLocalDataOriginalSize(apiDataBytes);
     setCompressedStorageUsed(compressedImageBytes + compressedPdfBytes);
     setOriginalStorageUsed(originalImageBytes + originalPdfBytes);
-    // await getBrowserStorageDetails();
+
     if ("storage" in navigator && "estimate" in navigator.storage) {
       const { usage, quota } = await navigator.storage.estimate();
   
@@ -120,29 +84,18 @@ const DexieDemo = () => {
       setDeviceBrowserStorageQuota(quota || 0);
       setDeviceBrowserStorageUsed(usage || 0);
   
-      console.log("usage", usage, "quota", quota);
+      // console.log("usage", usage, "quota", quota);
     }
   };
-  // const getBrowserStorageDetails = async () => {
-  //   if ("storage" in navigator && "estimate" in navigator.storage) {
-  //     const { usage, quota } = await navigator.storage.estimate();
-  
-  //     // usage and quota might be undefined or null, default to 0
-  //     setDeviceBrowserStorageQuota(quota || 0);
-  //     setDeviceBrowserStorageUsed(usage || 0);
-  
-  //     console.log("usage", usage, "quota", quota);
-  //   }
-  // };
+ 
 
-  console.log("device storgsr",deviceBrowserStorageQuota,deviceBrowserStorageUsed)
   const formatBytes = (bytes) => {
     if (bytes <= 0) return "0 B";
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`;
-    if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(2)} MB`;
-    if (bytes < 1024 ** 4) return `${(bytes / 1024 ** 3).toFixed(2)} GB`;
-    return `${(bytes / 1024 ** 4).toFixed(2)} TB`;
+    if (bytes < 1024 ** 3) return `${(bytes / (1024 ** 2)).toFixed(2)} MB`;
+    if (bytes < 1024 ** 4) return `${(bytes / (1024 ** 3)).toFixed(2)} GB`;
+    return `${(bytes / (1024 ** 4)).toFixed(2)} TB`;
   };
 
   const deleteApiItem = async (id) => {
@@ -191,12 +144,13 @@ const DexieDemo = () => {
 
   const handleFileUpload = async (e) => {
     setLoading(true);
+    try {
     const file = e.target.files[0];
     if (!file) return;
 
     const compressedData = await compressBlob(file);
     // const compressedBlob = new Blob([compressedData], { type: 'application/deflate' });
-    console.log("compressedData", compressedData, compressedData.length);
+
     if (file.type.startsWith("image/")) {
       await db.images.add({
         name: file.name,
@@ -220,17 +174,24 @@ const DexieDemo = () => {
     }
 
     await loadAttachments();
+    // setLoading(false);
+  }catch (err) {
+    console.error("Dexie handleFileUpload error:", err);
+    setError(err.message || "Failed to upload file.");
+  } finally {
     setLoading(false);
+  }
+
   };
 
   
   const captureFromWebcam = async () => {
     const imageSrc = webcamRef.current.getScreenshot();
+    try {
     const res = await fetch(imageSrc);
     setLoading(true);
     const blob = await res.blob();
     const compressedData = await compressBlob(blob);
-    console.log("compressedData", compressedData);
     await db.images.add({
       name: `webcam-${Date.now()}.png`,
       type: "image/png",
@@ -243,7 +204,13 @@ const DexieDemo = () => {
 
     setCameraOn(false);
     await loadAttachments();
+    // setLoading(false);
+  } catch (err) {
+    console.error("Dexie handleFileUpload error:", err);
+    setError(err.message || "Failed to upload file.");
+  }finally{
     setLoading(false);
+  }
   };
 
   const clearAll = async () => {
@@ -263,8 +230,13 @@ const DexieDemo = () => {
   };
   return (
     <div style={{ padding: 20 }}>
-      <h2>Attachment(for demo used Base64 instead Blob) </h2>
-      <p style={{ marginTop: 10 }}>
+      <h2>Attachment</h2>
+      {error && (
+  <div style={{  marginBottom: 20}}>
+    <strong>Error:</strong> {error}
+  </div>
+)}
+      {/* <p style={{ marginTop: 10 }}>
         Available Browser Storage :
         <strong>{formatBytes(deviceBrowserStorageQuota)}</strong>
     
@@ -274,7 +246,7 @@ const DexieDemo = () => {
         <strong>{formatBytes(deviceBrowserStorageUsed)}</strong>
      
       </p>
-      <hr></hr>
+      <hr></hr> */}
       <p style={{ marginTop: 10 }}>
         Original Storage used:
         <strong>{formatBytes(OriginalStorageUsed)}</strong>
@@ -368,7 +340,6 @@ const DexieDemo = () => {
           <h3>PDFs</h3>
           <div style={{ display: "flex", flexWrap: "wrap" }}>
             {attachments.pdfs?.map((att) => {
-              console.log("att>>>>>>>", att);
               if (!(att.data instanceof Uint8Array)) return null;
               const blob = decompressToBlob(att.data, att.type);
               const objectUrl = URL.createObjectURL(blob);
