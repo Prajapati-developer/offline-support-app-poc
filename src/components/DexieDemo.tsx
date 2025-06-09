@@ -15,7 +15,7 @@ const compressBlob = async (blob: Blob): Promise<Uint8Array> => {
   const buffer = await blob.arrayBuffer();
 
   // return compressSync(new Uint8Array(buffer),{ level: 6, mem: 12});
-  return deflateSync(new Uint8Array(buffer), { level: 6 });
+  return deflateSync(new Uint8Array(buffer), { level: 10 });
 };
 
 const decompressToBlob = (compressed, type) => {
@@ -56,10 +56,15 @@ const DexieDemo = () => {
   const [loading, setLoading] = useState(false);
   const [attachments, setAttachments] = useState([]);
   const [cameraOn, setCameraOn] = useState(false);
-  const [storageUsed, setStorageUsed] = useState(0);
+  const [OriginalStorageUsed, setOriginalStorageUsed] = useState(0);
+  const [CompressedStorageUsed, setCompressedStorageUsed] = useState(0);
   const [apiItems, setApiItems] = useState([]);
+  const [localDataOriginalSize, setLocalDataOriginalSize] = useState(0);
+  const [deviceBrowserStorageQuota, setDeviceBrowserStorageQuota] = useState(0);
+  const [deviceBrowserStorageUsed, setDeviceBrowserStorageUsed] = useState(0);
   const webcamRef = useRef(null);
   console.log("apiItems", apiItems);
+ 
 
   const loadAttachments = async () => {
     const pdfData = await db.pdfs.orderBy("timestamp").reverse().toArray();
@@ -81,12 +86,20 @@ const DexieDemo = () => {
     // const apiDataBytes = allApiData.reduce((sum, item) => {
     //   return sum + new TextEncoder().encode(JSON.stringify(item.data))?.length;
     // }, 0);
-    const imageBytes = imageData.reduce(
+    const compressedImageBytes = imageData.reduce(
       (sum, img) => sum + (img.compressedSize || 0),
       0
     );
-    const pdfBytes = pdfData.reduce(
+    const originalImageBytes = imageData.reduce(
+      (sum, img) => sum + (img.fileSize || 0),
+      0
+    );
+    const compressedPdfBytes = pdfData.reduce(
       (sum, pdf) => sum + (pdf.compressedSize || 0),
+      0
+    );
+    const originalPdfBytes = pdfData.reduce(
+      (sum, pdf) => sum + (pdf.fileSize || 0),
       0
     );
     const apiDataBytes = allApiData.reduce((sum, item) => {
@@ -95,9 +108,34 @@ const DexieDemo = () => {
     setApiItems(allApiData[0]?.data);
     // setAttachments(all);
     setAttachments({ images: imageData, pdfs: pdfData });
-    setStorageUsed(imageBytes + apiDataBytes + pdfBytes);
+    // setStorageUsed(imageBytes + apiDataBytes + pdfBytes);
+    setLocalDataOriginalSize(apiDataBytes);
+    setCompressedStorageUsed(compressedImageBytes + compressedPdfBytes);
+    setOriginalStorageUsed(originalImageBytes + originalPdfBytes);
+    // await getBrowserStorageDetails();
+    if ("storage" in navigator && "estimate" in navigator.storage) {
+      const { usage, quota } = await navigator.storage.estimate();
+  
+      // usage and quota might be undefined or null, default to 0
+      setDeviceBrowserStorageQuota(quota || 0);
+      setDeviceBrowserStorageUsed(usage || 0);
+  
+      console.log("usage", usage, "quota", quota);
+    }
   };
+  // const getBrowserStorageDetails = async () => {
+  //   if ("storage" in navigator && "estimate" in navigator.storage) {
+  //     const { usage, quota } = await navigator.storage.estimate();
+  
+  //     // usage and quota might be undefined or null, default to 0
+  //     setDeviceBrowserStorageQuota(quota || 0);
+  //     setDeviceBrowserStorageUsed(usage || 0);
+  
+  //     console.log("usage", usage, "quota", quota);
+  //   }
+  // };
 
+  console.log("device storgsr",deviceBrowserStorageQuota,deviceBrowserStorageUsed)
   const formatBytes = (bytes) => {
     if (bytes <= 0) return "0 B";
     if (bytes < 1024) return `${bytes} B`;
@@ -111,6 +149,7 @@ const DexieDemo = () => {
     await db.postApiData.delete(id);
     loadAttachments();
   };
+  
   const fetchAndSaveApiData = async () => {
     try {
       const response = await fetch(
@@ -150,15 +189,13 @@ const DexieDemo = () => {
     loadAttachments();
   }, []);
 
-  
   const handleFileUpload = async (e) => {
     setLoading(true);
     const file = e.target.files[0];
     if (!file) return;
-    console.log("file>>>>>>>", file, e);
-    
-    // const blob = new Blob([await file.arrayBuffer()], { type: file.type });
+
     const compressedData = await compressBlob(file);
+    // const compressedBlob = new Blob([compressedData], { type: 'application/deflate' });
     console.log("compressedData", compressedData, compressedData.length);
     if (file.type.startsWith("image/")) {
       await db.images.add({
@@ -186,57 +223,14 @@ const DexieDemo = () => {
     setLoading(false);
   };
 
-  // const handleFileUpload = async (e) => {
-  //   const file = e.target.files[0];
-  //   if (!file) return;
-
-  //   const isImage = file.type.startsWith("image/");
-
-  //   if (isImage) {
-  //     const reader = new FileReader();
-  //     reader.onload = async (event) => {
-  //       const base64 = event.target.result;
-  //       await db.images.add({
-  //         name: file.name,
-  //         type: file.type,
-  //         data: base64,
-  //         timestamp: Date.now(),
-  //       });
-  //       loadAttachments();
-  //     };
-  //     reader.readAsDataURL(file);
-  //   } else if (file.type === "application/pdf") {
-  //     const blob = new Blob([await file.arrayBuffer()], { type: file.type });
-  //     await db.pdfs.add({
-  //       name: file.name,
-  //       type: file.type,
-  //       data: blob,
-  //       timestamp: Date.now(),
-  //     });
-  //     loadAttachments();
-  //   }
-  // };
-
-  // const captureFromWebcam = async () => {
-  //   const imageSrc = webcamRef.current.getScreenshot();
-
-  //   await db.images.add({
-  //     name: `webcam-${Date.now()}.png`,
-  //     type: "image/png",
-  //     data: imageSrc,
-  //     timestamp: Date.now(),
-  //   });
-
-  //   setCameraOn(false);
-  //   loadAttachments();
-  // };
+  
   const captureFromWebcam = async () => {
     const imageSrc = webcamRef.current.getScreenshot();
     const res = await fetch(imageSrc);
     setLoading(true);
     const blob = await res.blob();
     const compressedData = await compressBlob(blob);
-    console.log("compressedData",compressedData)
+    console.log("compressedData", compressedData);
     await db.images.add({
       name: `webcam-${Date.now()}.png`,
       type: "image/png",
@@ -271,8 +265,27 @@ const DexieDemo = () => {
     <div style={{ padding: 20 }}>
       <h2>Attachment(for demo used Base64 instead Blob) </h2>
       <p style={{ marginTop: 10 }}>
-        Storage used: <strong>{formatBytes(storageUsed)}</strong>
+        Available Browser Storage :
+        <strong>{formatBytes(deviceBrowserStorageQuota)}</strong>
+    
       </p>
+      <p style={{ marginTop: 10 }}>
+        Used Browser Storage :
+        <strong>{formatBytes(deviceBrowserStorageUsed)}</strong>
+     
+      </p>
+      <hr></hr>
+      <p style={{ marginTop: 10 }}>
+        Original Storage used:
+        <strong>{formatBytes(OriginalStorageUsed)}</strong>
+      </p>
+      <p style={{ marginTop: 10 }}>
+        Compressed Storage used:
+        <strong>{formatBytes(CompressedStorageUsed)}</strong>
+      </p>
+      {/* <p style={{ marginTop: 10 }}>
+        Compressed Storage used: <strong>{formatBytes(CompressedStorageUsed)}</strong>
+      </p> */}
 
       <input type="file" accept="image/*,.pdf" onChange={handleFileUpload} />
       <button onClick={() => setCameraOn(true)} style={{ marginLeft: 10 }}>
@@ -341,7 +354,9 @@ const DexieDemo = () => {
                 <div key={att.id} style={{ margin: 10 }}>
                   <img src={objectUrl} alt={att.name} style={{ width: 100 }} />
                   <div>Original File Size: {formatBytes(att.fileSize)}</div>
-                  <div>Compressed File Size: {formatBytes(att.compressedSize)}</div>
+                  <div>
+                    Compressed File Size: {formatBytes(att.compressedSize)}
+                  </div>
 
                   <button onClick={() => deleteImage(att.id)}>Delete</button>
                 </div>
@@ -362,9 +377,11 @@ const DexieDemo = () => {
                   <a href={objectUrl} download={att.name}>
                     {att.name}
                   </a>
-                  
+
                   <div>Original File Size: {formatBytes(att.fileSize)}</div>
-                  <div>Compressed File Size: {formatBytes(att.compressedSize)}</div>
+                  <div>
+                    Compressed File Size: {formatBytes(att.compressedSize)}
+                  </div>
 
                   <button onClick={() => deletePdf(att.id)}>Delete</button>
                 </div>
